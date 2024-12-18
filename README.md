@@ -2,6 +2,8 @@
 
 A command-line tool built with Bun to analyze the size of your GitHub packages. This tool helps you track the size of your npm packages hosted on GitHub Package Registry, including their dependencies and historical versions.
 
+![GitHub Package Size Analyzer in action](screenshot.png)
+
 ## Motivation
 
 This tool was created to help developers manage their GitHub Package Registry storage more effectively, especially considering GitHub Pro's 2GB storage limit. By analyzing package sizes and their dependencies, you can:
