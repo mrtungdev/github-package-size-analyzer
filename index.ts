@@ -14,7 +14,7 @@ if (!GITHUB_TOKEN) {
 }
 
 const octokit = new Octokit({
-  auth: GITHUB_TOKEN
+  auth: GITHUB_TOKEN,
 });
 
 interface PackageVersion {
@@ -34,10 +34,11 @@ interface PackageInfo {
 
 async function getPackages() {
   try {
-    const { data: packages } = await octokit.packages.listPackagesForAuthenticatedUser({
-      package_type: 'npm',
-      per_page: 100
-    });
+    const { data: packages } =
+      await octokit.packages.listPackagesForAuthenticatedUser({
+        package_type: "npm",
+        per_page: 100,
+      });
     return packages;
   } catch (error) {
     console.error("Error fetching packages:", error);
@@ -47,11 +48,12 @@ async function getPackages() {
 
 async function getPackageVersions(packageName: string, owner: string) {
   try {
-    const { data: versions } = await octokit.packages.getAllPackageVersionsForPackageOwnedByUser({
-      package_type: 'npm',
-      package_name: packageName,
-      username: owner
-    });
+    const { data: versions } =
+      await octokit.packages.getAllPackageVersionsForPackageOwnedByUser({
+        package_type: "npm",
+        package_name: packageName,
+        username: owner,
+      });
     return versions;
   } catch (error) {
     console.error(`Error fetching versions for ${packageName}:`, error);
@@ -64,19 +66,22 @@ async function downloadAndCheckSize(pkg: any): Promise<PackageInfo> {
   const packageInfo: PackageInfo = {
     name: pkg.name,
     owner: pkg.owner.login,
-    versions: []
+    versions: [],
   };
-  
+
   try {
     // Create temp directory
     await fs.promises.mkdir(tempDir, { recursive: true });
     process.chdir(tempDir);
 
     // Create temporary package.json
-    await fs.promises.writeFile('package.json', JSON.stringify({
-      name: 'temp-project',
-      private: true
-    }));
+    await fs.promises.writeFile(
+      "package.json",
+      JSON.stringify({
+        name: "temp-project",
+        private: true,
+      })
+    );
 
     // Get package versions
     const versions = await getPackageVersions(pkg.name, pkg.owner.login);
@@ -86,37 +91,58 @@ async function downloadAndCheckSize(pkg: any): Promise<PackageInfo> {
     }
 
     // Configure npm to use GitHub Packages
-    await fs.promises.writeFile('.npmrc', `//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
-@${pkg.owner.login}:registry=https://npm.pkg.github.com`);
+    await fs.promises.writeFile(
+      ".npmrc",
+      `//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+@${pkg.owner.login}:registry=https://npm.pkg.github.com`
+    );
 
     // Process each version
     for (const version of versions) {
       try {
-        console.log(`\nAnalyzing ${pkg.name}@${version.name || 'latest'}...`);
-        
+        console.log(`\nAnalyzing ${pkg.name}@${version.name || "latest"}...`);
+
         // Clean node_modules before installing new version
-        await fs.promises.rm(path.join(tempDir, 'node_modules'), { recursive: true, force: true });
-        
+        await fs.promises.rm(path.join(tempDir, "node_modules"), {
+          recursive: true,
+          force: true,
+        });
+
         // Install specific version
         await $`bun add @${pkg.owner.login}/${pkg.name}@${version.name}`;
 
         // Calculate package size
-        const nodeModulesPath = path.join(tempDir, 'node_modules');
-        const packagePath = path.join(nodeModulesPath, '@' + pkg.owner.login, pkg.name);
-        
+        const nodeModulesPath = path.join(tempDir, "node_modules");
+        const packagePath = path.join(
+          nodeModulesPath,
+          "@" + pkg.owner.login,
+          pkg.name
+        );
+
         const packageSize = await calculateDirectorySize(packagePath);
-        const depsSize = await calculateDirectorySize(nodeModulesPath) - packageSize;
+        const depsSize =
+          (await calculateDirectorySize(nodeModulesPath)) - packageSize;
+
+        // Get download count from version metadata
+        let downloadCount = 0;
+        const metadata = version.metadata as any;
+        if (metadata?.npm?.downloads) {
+          downloadCount = metadata.npm.downloads;
+        }
 
         packageInfo.versions.push({
           name: version.name,
           packageSize,
           depsSize,
           totalSize: packageSize + depsSize,
-          downloadCount: (version.metadata as any)?.docker?.tags?.[0]?.download_count || 0,
-          created_at: version.created_at
+          downloadCount,
+          created_at: version.created_at,
         });
       } catch (error) {
-        console.error(`Error processing version ${version.name} of ${pkg.name}:`, error);
+        console.error(
+          `Error processing version ${version.name} of ${pkg.name}:`,
+          error
+        );
       }
     }
 
@@ -158,53 +184,93 @@ async function calculateDirectorySize(dirPath: string): Promise<number> {
 
 function printPackageTable(packages: PackageInfo[]) {
   // Print header
-  console.log('\n' + '='.repeat(120));
+  console.log("\n" + "=".repeat(120));
   console.log(
-    'Package Name'.padEnd(30) +
-    'Version'.padEnd(15) +
-    'Package Size'.padEnd(15) +
-    'Deps Size'.padEnd(15) +
-    'Total Size'.padEnd(15) +
-    'Downloads'.padEnd(10) +
-    'Created At'
+    "Package Name".padEnd(30) +
+      "Version".padEnd(15) +
+      "Package Size".padEnd(15) +
+      "Deps Size".padEnd(15) +
+      "Total Size".padEnd(15) +
+      "Downloads".padEnd(10) +
+      "Created At"
   );
-  console.log('='.repeat(120));
+  console.log("=".repeat(120));
+
+  let grandTotalPackageSize = 0;
+  let grandTotalDepsSize = 0;
+  let grandTotalSize = 0;
 
   // Print package information
   for (const pkg of packages) {
-    const versions = pkg.versions.sort((a, b) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    const versions = pkg.versions.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
+
+    let packageTotalPackageSize = 0;
+    let packageTotalDepsSize = 0;
+    let packageTotalSize = 0;
 
     for (let i = 0; i < versions.length; i++) {
       const version = versions[i];
-      const packageName = i === 0 ? `@${pkg.owner}/${pkg.name}` : '';
-      
+      const packageName = i === 0 ? `@${pkg.owner}/${pkg.name}` : "";
+
       console.log(
         packageName.padEnd(30) +
-        version.name.padEnd(15) +
-        prettyBytes(version.packageSize).padEnd(15) +
-        prettyBytes(version.depsSize).padEnd(15) +
-        prettyBytes(version.totalSize).padEnd(15) +
-        version.downloadCount.toString().padEnd(10) +
-        new Date(version.created_at).toLocaleDateString()
+          version.name.padEnd(15) +
+          prettyBytes(version.packageSize).padEnd(15) +
+          prettyBytes(version.depsSize).padEnd(15) +
+          prettyBytes(version.totalSize).padEnd(15) +
+          version.downloadCount.toString().padEnd(10) +
+          new Date(version.created_at).toLocaleDateString()
       );
+
+      packageTotalPackageSize += version.packageSize;
+      packageTotalDepsSize += version.depsSize;
+      packageTotalSize += version.totalSize;
     }
-    console.log('-'.repeat(120));
+
+    // Print package total
+    console.log(
+      "Package Total".padEnd(30) +
+        "".padEnd(15) +
+        prettyBytes(packageTotalPackageSize).padEnd(15) +
+        prettyBytes(packageTotalDepsSize).padEnd(15) +
+        prettyBytes(packageTotalSize).padEnd(15) +
+        "".padEnd(10) +
+        ""
+    );
+    console.log("-".repeat(120));
+
+    grandTotalPackageSize += packageTotalPackageSize;
+    grandTotalDepsSize += packageTotalDepsSize;
+    grandTotalSize += packageTotalSize;
   }
+
+  // Print grand total
+  console.log(
+    "GRAND TOTAL".padEnd(30) +
+      "".padEnd(15) +
+      prettyBytes(grandTotalPackageSize).padEnd(15) +
+      prettyBytes(grandTotalDepsSize).padEnd(15) +
+      prettyBytes(grandTotalSize).padEnd(15) +
+      "".padEnd(10) +
+      ""
+  );
+  console.log("=".repeat(120));
 }
 
 async function main() {
   console.log("Fetching packages from GitHub Package Registry...");
   const packages = await getPackages();
-  
+
   if (packages.length === 0) {
     console.log("No packages found.");
     return;
   }
-  
+
   console.log(`Found ${packages.length} packages`);
-  
+
   const packageInfos: PackageInfo[] = [];
   for (const pkg of packages) {
     const info = await downloadAndCheckSize(pkg);
